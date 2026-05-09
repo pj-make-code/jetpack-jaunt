@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jetpack Joyride</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #1e3c72, #2a5298);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+        }
+        
+        .game-container {
+            position: relative;
+            border: 3px solid #fff;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        
+        canvas {
+            display: block;
+            background: linear-gradient(to bottom, #87CEEB 0%, #98FB98 100%);
+        }
+        
+        .ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            z-index: 10;
+        }
+        
+        .controls {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            text-align: center;
+            font-size: 14px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+        }
+        
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+        
+        .restart-btn {
+            background: #ff6b35;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        
+        .restart-btn:hover {
+            background: #e55a2b;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <canvas id="gameCanvas" width="800" height="400"></canvas>
+        <div class="ui">
+            <div>Score: <span id="score">0</span></div>
+            <div>Coins: <span id="coins">0</span></div>
+        </div>
+        <div class="controls">
+            Hold SPACE or click to activate jetpack
+        </div>
+        <div class="game-over" id="gameOver">
+            <h2>Game Over!</h2>
+            <p>Final Score: <span id="finalScore">0</span></p>
+            <p>Coins Collected: <span id="finalCoins">0</span></p>
+            <button class="restart-btn" onclick="restartGame()">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const coinsElement = document.getElementById('coins');
+        const gameOverElement = document.getElementById('gameOver');
+        const finalScoreElement = document.getElementById('finalScore');
+        const finalCoinsElement = document.getElementById('finalCoins');
+
+        // Game state
+        let gameRunning = true;
+        let score = 0;
+        let coins = 0;
+        let frameCount = 0;
+
+        // Player object
+        const player = {
+            x: 100,
+            y: 200,
+            width: 40,
+            height: 40,
+            velocityY: 0,
+            jetpackOn: false,
+            jetpackParticles: []
+        };
+
+        // Game objects arrays
+        let obstacles = [];
+        let coinObjects = [];
+        let backgroundElements = [];
+
+        // Game physics
+        const gravity = 0.3;
+        const jetpackThrust = -0.5;
+        const gameSpeed = 2.5;
+
+        // Initialize background elements
+        function initBackground() {
+            for (let i = 0; i < 10; i++) {
+                backgroundElements.push({
+                    x: Math.random() * canvas.width * 2,
+                    y: Math.random() * canvas.height,
+                    size: Math.random() * 3 + 1,
+                    speed: Math.random() * 0.5 + 0.2
+                });
+            }
+        }
+
+        // Create obstacle
+        function createObstacle() {
+            const type = Math.random() < 0.5 ? 'laser' : 'missile';
+            const obstacle = {
+                x: canvas.width,
+                width: type === 'laser' ? 15 : 50,
+                height: type === 'laser' ? Math.random() * 150 + 80 : 25,
+                type: type,
+                passed: false
+            };
+            
+            if (type === 'laser') {
+                obstacle.y = Math.random() * (canvas.height - obstacle.height);
+            } else {
+                obstacle.y = Math.random() * (canvas.height - obstacle.height);
+            }
+            
+            obstacles.push(obstacle);
+        }
+
+        // Create coin
+        function createCoin() {
+            coinObjects.push({
+                x: canvas.width,
+                y: Math.random() * (canvas.height - 40) + 20,
+                width: 20,
+                height: 20,
+                collected: false,
+                rotation: 0
+            });
+        }
+
+        // Draw player
+        function drawPlayer() {
+            ctx.fillStyle = '#ff6b35';
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+            
+            // Draw simple jetpack
+            ctx.fillStyle = '#333';
+            ctx.fillRect(player.x - 15, player.y + 10, 10, 20);
+            
+            // Draw jetpack flames when active
+            if (player.jetpackOn) {
+                // Add particle
+                player.jetpackParticles.push({
+                    x: player.x - 10,
+                    y: player.y + 20,
+                    life: 20,
+                    velocityX: Math.random() * -2 - 1,
+                    velocityY: Math.random() * 2 - 1
+                });
+                
+                // Draw flame
+                ctx.fillStyle = '#ff4444';
+                ctx.fillRect(player.x - 25, player.y + 15, 15, 10);
+                ctx.fillStyle = '#ffaa00';
+                ctx.fillRect(player.x - 20, player.y + 17, 10, 6);
+            }
+            
+            // Draw and update particles
+            player.jetpackParticles.forEach((particle, index) => {
+                particle.x += particle.velocityX;
+                particle.y += particle.velocityY;
+                particle.life--;
+                
+                const alpha = particle.life / 20;
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = particle.life > 10 ? '#ff4444' : '#ffaa00';
+                ctx.fillRect(particle.x, particle.y, 3, 3);
+                
+                if (particle.life <= 0) {
+                    player.jetpackParticles.splice(index, 1);
+                }
+            });
+            ctx.globalAlpha = 1;
+        }
+
+        // Draw obstacles
+        function drawObstacles() {
+            obstacles.forEach(obstacle => {
+                if (obstacle.type === 'laser') {
+                    // Draw laser barrier
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+                    
+                    // Add glow effect
+                    ctx.shadowColor = '#ff0000';
+                    ctx.shadowBlur = 10;
+                    ctx.fillRect(obstacle.x + 2, obstacle.y + 2, obstacle.width - 4, obstacle.height - 4);
+                    ctx.shadowBlur = 0;
+                } else {
+                    // Draw missile
+                    ctx.fillStyle = '#666';
+                    ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+                    
+                    // Draw missile tip
+                    ctx.fillStyle = '#444';
+                    ctx.beginPath();
+                    ctx.moveTo(obstacle.x + obstacle.width, obstacle.y + obstacle.height / 2);
+                    ctx.lineTo(obstacle.x + obstacle.width + 15, obstacle.y + obstacle.height / 2);
+                    ctx.lineWidth = obstacle.height;
+                    ctx.stroke();
+                    ctx.lineWidth = 1;
+                }
+            });
+        }
+
+        // Draw coins
+        function drawCoins() {
+            coinObjects.forEach(coin => {
+                if (!coin.collected) {
+                    coin.rotation += 0.1;
+                    
+                    ctx.save();
+                    ctx.translate(coin.x + coin.width / 2, coin.y + coin.height / 2);
+                    ctx.rotate(coin.rotation);
+                    
+                    // Draw coin
+                    ctx.fillStyle = '#ffd700';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, coin.width / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Draw inner circle
+                    ctx.fillStyle = '#ffed4e';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, coin.width / 3, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.restore();
+                }
+            });
+        }
+
+        // Draw background
+        function drawBackground() {
+            // Update and draw background elements (clouds/stars)
+            backgroundElements.forEach(element => {
+                element.x -= element.speed;
+                if (element.x < -10) {
+                    element.x = canvas.width + 10;
+                }
+                
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                ctx.beginPath();
+                ctx.arc(element.x, element.y, element.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        // Check collisions
+        function checkCollisions() {
+            // Check obstacle collisions
+            obstacles.forEach(obstacle => {
+                if (player.x < obstacle.x + obstacle.width &&
+                    player.x + player.width > obstacle.x &&
+                    player.y < obstacle.y + obstacle.height &&
+                    player.y + player.height > obstacle.y) {
+                    gameOver();
+                }
+                
+                // Update score when passing obstacles
+                if (!obstacle.passed && obstacle.x + obstacle.width < player.x) {
+                    obstacle.passed = true;
+                    score += 10;
+                }
+            });
+            
+            // Check coin collisions
+            coinObjects.forEach(coin => {
+                if (!coin.collected &&
+                    player.x < coin.x + coin.width &&
+                    player.x + player.width > coin.x &&
+                    player.y < coin.y + coin.height &&
+                    player.y + player.height > coin.y) {
+                    coin.collected = true;
+                    coins++;
+                    score += 5;
+                }
+            });
+            
+            // Check ground and ceiling collision
+            if (player.y <= 0 || player.y + player.height >= canvas.height) {
+                gameOver();
+            }
+        }
+
+        // Update game logic
+        function update() {
+            if (!gameRunning) return;
+            
+            frameCount++;
+            
+            // Update player physics
+            if (player.jetpackOn) {
+                player.velocityY += jetpackThrust;
+            }
+            player.velocityY += gravity;
+            
+            // Add velocity damping for smoother control
+            player.velocityY *= 0.98;
+            
+            // Limit max velocity
+            if (player.velocityY > 8) player.velocityY = 8;
+            if (player.velocityY < -8) player.velocityY = -8;
+            
+            player.y += player.velocityY;
+            
+            // Move obstacles
+            obstacles.forEach((obstacle, index) => {
+                obstacle.x -= gameSpeed;
+                if (obstacle.x + obstacle.width < 0) {
+                    obstacles.splice(index, 1);
+                }
+            });
+            
+            // Move coins
+            coinObjects.forEach((coin, index) => {
+                coin.x -= gameSpeed;
+                if (coin.x + coin.width < 0) {
+                    coinObjects.splice(index, 1);
+                }
+            });
+            
+            // Spawn obstacles (less frequently)
+            if (frameCount % 180 === 0) {
+                createObstacle();
+            }
+            
+            // Spawn coins
+            if (frameCount % 150 === 0) {
+                createCoin();
+            }
+            
+            // Update score
+            score++;
+            
+            checkCollisions();
+            updateUI();
+        }
+
+        // Update UI
+        function updateUI() {
+            scoreElement.textContent = score;
+            coinsElement.textContent = coins;
+        }
+
+        // Game over
+        function gameOver() {
+            gameRunning = false;
+            finalScoreElement.textContent = score;
+            finalCoinsElement.textContent = coins;
+            gameOverElement.style.display = 'block';
+        }
+
+        // Restart game
+        function restartGame() {
+            gameRunning = true;
+            score = 0;
+            coins = 0;
+            frameCount = 0;
+            player.y = 200;
+            player.velocityY = 0;
+            player.jetpackParticles = [];
+            obstacles = [];
+            coinObjects = [];
+            gameOverElement.style.display = 'none';
+        }
+
+        // Draw everything
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            drawBackground();
+            drawPlayer();
+            drawObstacles();
+            drawCoins();
+        }
+
+        // Game loop
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Input handling
+        let isJetpackActive = false;
+
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                if (!isJetpackActive) {
+                    isJetpackActive = true;
+                    player.jetpackOn = true;
+                }
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                isJetpackActive = false;
+                player.jetpackOn = false;
+            }
+        });
+
+        canvas.addEventListener('mousedown', () => {
+            if (!isJetpackActive) {
+                isJetpackActive = true;
+                player.jetpackOn = true;
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isJetpackActive = false;
+            player.jetpackOn = false;
+        });
+
+        // Touch support
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (!isJetpackActive) {
+                isJetpackActive = true;
+                player.jetpackOn = true;
+            }
+        });
+
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            isJetpackActive = false;
+            player.jetpackOn = false;
+        });
+
+        // Initialize and start game
+        initBackground();
+        gameLoop();
+    </script>
+</body>
+</html>
